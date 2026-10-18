@@ -3,7 +3,13 @@
  * Freelancer applies to a job with a proposal and bid amount.
  */
 import { useState, useEffect, useRef } from "react";
-import { submitApplication, fetchProposalTemplates, scoreProposal, createScopeSession, finalizeScopeSession } from "@/lib/api";
+import {
+  submitApplication,
+  fetchProposalTemplates,
+  scoreProposal,
+  createScopeSession,
+  finalizeScopeSession,
+} from "@/lib/api";
 import type { ProposalScore } from "@/lib/api";
 import type { Job } from "@/utils/types";
 import { formatXLM } from "@/utils/format";
@@ -41,9 +47,12 @@ function randomNonceHex(bytes = 16): string {
   } else if (typeof crypto !== "undefined" && crypto.getRandomValues) {
     crypto.getRandomValues(arr);
   } else {
-    for (let i = 0; i < arr.length; i += 1) arr[i] = Math.floor(Math.random() * 256);
+    for (let i = 0; i < arr.length; i += 1)
+      arr[i] = Math.floor(Math.random() * 256);
   }
-  return Array.from(arr).map((b) => b.toString(16).padStart(2, "0")).join("");
+  return Array.from(arr)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 async function sha256Hex(value: string): Promise<string> {
@@ -54,18 +63,35 @@ async function sha256Hex(value: string): Promise<string> {
     .join("");
 }
 
-export default function ApplicationForm({ job, publicKey, biddingPhase = "commitment", prefillData, onOptimisticSubmit, onRevert, onSuccess, submitButtonText }: ApplicationFormProps) {
+export default function ApplicationForm({
+  job,
+  publicKey,
+  biddingPhase = "commitment",
+  prefillData,
+  onOptimisticSubmit,
+  onRevert,
+  onSuccess,
+  submitButtonText,
+}: ApplicationFormProps) {
   const [proposal, setProposal] = useState(prefillData?.message || "");
   const toast = useToast();
-  const [bidAmount, setBidAmount] = useState(prefillData?.bidAmount || job.budget);
+  const [bidAmount, setBidAmount] = useState(
+    prefillData?.bidAmount || job.budget,
+  );
   const [revealNonce, setRevealNonce] = useState(randomNonceHex());
   const [revealLater, setRevealLater] = useState(false);
-  const [submitStatus, setSubmitStatus] = useState<"idle" | "submitting" | "success">("idle");
+  const [submitStatus, setSubmitStatus] = useState<
+    "idle" | "submitting" | "success"
+  >("idle");
   const [error, setError] = useState<string | null>(null);
   const submittingRef = useRef(false);
   const isMountedRef = useRef(true);
-  const [screeningAnswers, setScreeningAnswers] = useState<Record<string, string>>({});
-  const [templates, setTemplates] = useState<{ id: string; name: string; content: string }[]>([]);
+  const [screeningAnswers, setScreeningAnswers] = useState<
+    Record<string, string>
+  >({});
+  const [templates, setTemplates] = useState<
+    { id: string; name: string; content: string }[]
+  >([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [creatingScope, setCreatingScope] = useState(false);
   const [scopeShareUrl, setScopeShareUrl] = useState<string | null>(null);
@@ -85,13 +111,15 @@ export default function ApplicationForm({ job, publicKey, biddingPhase = "commit
   }, []);
 
   // Issue #1548 — real-time Relevance / Clarity / Completeness scores.
-  const [proposalScore, setProposalScore] = useState<ProposalScore | null>(null);
+  const [proposalScore, setProposalScore] = useState<ProposalScore | null>(
+    null,
+  );
   const [scoreWarning, setScoreWarning] = useState<string | null>(null);
   const [scoring, setScoring] = useState(false);
 
-
   // Issue #152 — enforce 50-word minimum on the proposal.
-  const wordCount = proposal.trim() === "" ? 0 : proposal.trim().split(/\s+/).length;
+  const wordCount =
+    proposal.trim() === "" ? 0 : proposal.trim().split(/\s+/).length;
   const MIN_WORDS = 50;
   const wordsRemaining = Math.max(0, MIN_WORDS - wordCount);
   const meetsWordMinimum = wordCount >= MIN_WORDS;
@@ -107,7 +135,7 @@ export default function ApplicationForm({ job, publicKey, biddingPhase = "commit
   useEffect(() => {
     if (job.screeningQuestions && job.screeningQuestions.length > 0) {
       const initialAnswers: Record<string, string> = {};
-      job.screeningQuestions.forEach(q => {
+      job.screeningQuestions.forEach((q) => {
         initialAnswers[q] = "";
       });
       setScreeningAnswers(initialAnswers);
@@ -115,7 +143,9 @@ export default function ApplicationForm({ job, publicKey, biddingPhase = "commit
   }, [job.screeningQuestions]);
 
   useEffect(() => {
-    fetchProposalTemplates().then(setTemplates).catch(() => {});
+    fetchProposalTemplates()
+      .then(setTemplates)
+      .catch(() => {});
   }, []);
 
   // Issue #1548 — debounce scoring by 2s after the proposal stops changing.
@@ -159,9 +189,12 @@ export default function ApplicationForm({ job, publicKey, biddingPhase = "commit
     return () => clearTimeout(timer);
   }, [proposal, job.title, job.description, jobSkillsKey]);
 
-  const allScreeningQuestionsAnswered = job.screeningQuestions && job.screeningQuestions.length > 0
-    ? job.screeningQuestions.every(q => screeningAnswers[q] && screeningAnswers[q].trim().length > 0)
-    : true;
+  const allScreeningQuestionsAnswered =
+    job.screeningQuestions && job.screeningQuestions.length > 0
+      ? job.screeningQuestions.every(
+          (q) => screeningAnswers[q] && screeningAnswers[q].trim().length > 0,
+        )
+      : true;
 
   const isFormValid = isValid && allScreeningQuestionsAnswered;
 
@@ -175,10 +208,18 @@ export default function ApplicationForm({ job, publicKey, biddingPhase = "commit
     onOptimisticSubmit?.();
 
     try {
-      const referredBy = typeof window !== "undefined" ? localStorage.getItem(`referral_${job.id}`) : null;
+      const referredBy =
+        typeof window !== "undefined"
+          ? localStorage.getItem(`referral_${job.id}`)
+          : null;
       const commitmentInput = `${parseFloat(bidAmount).toFixed(7)}:${revealNonce}`;
       const bidCommitment = await sha256Hex(commitmentInput);
-      if (scopeSessionId) { await finalizeScopeSession(scopeSessionId, { content: proposal, payload: { jobId: job.id } }); }
+      if (scopeSessionId) {
+        await finalizeScopeSession(scopeSessionId, {
+          content: proposal,
+          payload: { jobId: job.id },
+        });
+      }
       await submitApplication({
         jobId: job.id,
         freelancerAddress: publicKey,
@@ -187,7 +228,10 @@ export default function ApplicationForm({ job, publicKey, biddingPhase = "commit
         currency: job.currency || "XLM",
         bidCommitment,
         bidNonce: revealNonce,
-        screeningAnswers: job.screeningQuestions && job.screeningQuestions.length > 0 ? screeningAnswers : undefined,
+        screeningAnswers:
+          job.screeningQuestions && job.screeningQuestions.length > 0
+            ? screeningAnswers
+            : undefined,
         referredBy: referredBy || undefined,
       });
 
@@ -256,26 +300,36 @@ export default function ApplicationForm({ job, publicKey, biddingPhase = "commit
   return (
     <>
       <div className="card animate-slide-up">
-        <h3 className="font-display text-lg font-bold text-amber-100 mb-1">Submit Proposal</h3>
+        <h3 className="font-display text-lg font-bold text-amber-100 mb-1">
+          Submit Proposal
+        </h3>
         <p className="text-amber-800 text-sm mb-6">
-          Client budget: <span className="text-market-400 font-mono font-medium">{formatXLM(job.budget)}</span>
+          Client budget:{" "}
+          <span className="text-market-400 font-mono font-medium">
+            {formatXLM(job.budget)}
+          </span>
         </p>
-          <div className="mb-4 rounded-xl border border-market-500/20 bg-ink-900/40 p-3 text-xs text-amber-700">
-            {biddingPhase === "commitment"
-              ? "Sealed-bid commitment phase: your amount stays hidden until reveal."
-              : "Reveal phase: client has closed bidding and is waiting for reveals."}
-          </div>
+        <div className="mb-4 rounded-xl border border-market-500/20 bg-ink-900/40 p-3 text-xs text-amber-700">
+          {biddingPhase === "commitment"
+            ? "Sealed-bid commitment phase: your amount stays hidden until reveal."
+            : "Reveal phase: client has closed bidding and is waiting for reveals."}
+        </div>
 
         <div className="space-y-5">
           <div>
-            <label htmlFor="use-template" className="label">Use Template</label>
-            <select id="use-template"
+            <label htmlFor="use-template" className="label">
+              Use Template
+            </label>
+            <select
+              id="use-template"
               value={selectedTemplateId}
               disabled={isPending}
               onChange={(e) => {
                 const templateId = e.target.value;
                 setSelectedTemplateId(templateId);
-                const template = templates.find((item) => item.id === templateId);
+                const template = templates.find(
+                  (item) => item.id === templateId,
+                );
                 if (template) setProposal(template.content);
               }}
               className="input-field appearance-none cursor-pointer"
@@ -293,10 +347,12 @@ export default function ApplicationForm({ job, publicKey, biddingPhase = "commit
           <div className="rounded-xl border border-market-500/20 bg-market-900/30 p-3">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <p className="text-sm font-medium text-amber-100">Co-write this proposal</p>
+                <p className="text-sm font-medium text-amber-100">
+                  Co-write this proposal
+                </p>
                 <p className="text-xs text-amber-700 mt-0.5">
-                  Invite a teammate to edit and review together in real time. The
-                  session locks automatically when you submit.
+                  Invite a teammate to edit and review together in real time.
+                  The session locks automatically when you submit.
                 </p>
               </div>
               <button
@@ -337,22 +393,27 @@ export default function ApplicationForm({ job, publicKey, biddingPhase = "commit
                 </button>
               </div>
             )}
-            {scopeError && <p className="mt-2 text-xs text-red-400">{scopeError}</p>}
+            {scopeError && (
+              <p className="mt-2 text-xs text-red-400">{scopeError}</p>
+            )}
           </div>
 
           {/* Cover letter */}
           <div>
-            <label className="label" htmlFor="cover-letter">Cover Letter</label>
+            <label className="label" htmlFor="cover-letter">
+              Cover Letter
+            </label>
             <textarea
               id="cover-letter"
-              value={proposal} onChange={(e) => setProposal(e.target.value)}
+              value={proposal}
+              onChange={(e) => setProposal(e.target.value)}
               disabled={isPending}
               rows={6}
               maxLength={MAX_PROPOSAL_CHARS}
               placeholder="Describe your relevant experience, your approach to this project, and why you're the best fit..."
               className={clsx(
                 "textarea-field",
-                proposal.length > 0 && !meetsWordMinimum && "border-red-500/40"
+                proposal.length > 0 && !meetsWordMinimum && "border-red-500/40",
               )}
               aria-invalid={proposal.length > 0 && !meetsWordMinimum}
               aria-describedby="proposal-word-count proposal-char-count"
@@ -361,13 +422,15 @@ export default function ApplicationForm({ job, publicKey, biddingPhase = "commit
               id="proposal-word-count"
               className={clsx(
                 "mt-1 text-xs font-medium",
-                meetsWordMinimum ? "text-green-400" : "text-red-400"
+                meetsWordMinimum ? "text-green-400" : "text-red-400",
               )}
             >
-              {wordCount} {wordCount === 1 ? "word" : "words"} (minimum {MIN_WORDS})
+              {wordCount} {wordCount === 1 ? "word" : "words"} (minimum{" "}
+              {MIN_WORDS})
               {!meetsWordMinimum && (
                 <span className="ml-1 text-amber-800/80 font-normal">
-                  — {wordsRemaining} more {wordsRemaining === 1 ? "word" : "words"} needed
+                  — {wordsRemaining} more{" "}
+                  {wordsRemaining === 1 ? "word" : "words"} needed
                 </span>
               )}
             </p>
@@ -376,7 +439,7 @@ export default function ApplicationForm({ job, publicKey, biddingPhase = "commit
               data-testid="proposal-char-count"
               className={clsx(
                 "mt-0.5 text-xs font-medium tabular-nums",
-                nearCharLimit ? "text-red-400" : "text-amber-700"
+                nearCharLimit ? "text-red-400" : "text-amber-700",
               )}
             >
               {proposal.length} / {MAX_PROPOSAL_CHARS}
@@ -392,11 +455,18 @@ export default function ApplicationForm({ job, publicKey, biddingPhase = "commit
 
           {/* Bid amount */}
           <div>
-            <label htmlFor="your-bid-xlm" className="label">Your Bid (XLM)</label>
-            <input id="your-bid-xlm"
-              type="number" value={bidAmount} onChange={(e) => setBidAmount(e.target.value)}
+            <label htmlFor="your-bid-xlm" className="label">
+              Your Bid (XLM)
+            </label>
+            <input
+              id="your-bid-xlm"
+              type="number"
+              value={bidAmount}
+              onChange={(e) => setBidAmount(e.target.value)}
               disabled={isPending}
-              min="1" step="1" className="input-field"
+              min="1"
+              step="1"
+              className="input-field"
               placeholder="Enter your bid amount"
             />
             <p className="mt-1 text-xs text-amber-600">
@@ -405,8 +475,11 @@ export default function ApplicationForm({ job, publicKey, biddingPhase = "commit
           </div>
 
           <div>
-            <label htmlFor="reveal-nonce-keep-safe" className="label">Reveal Nonce (keep safe)</label>
-            <input id="reveal-nonce-keep-safe"
+            <label htmlFor="reveal-nonce-keep-safe" className="label">
+              Reveal Nonce (keep safe)
+            </label>
+            <input
+              id="reveal-nonce-keep-safe"
               type="text"
               value={revealNonce}
               disabled={isPending}
@@ -422,9 +495,17 @@ export default function ApplicationForm({ job, publicKey, biddingPhase = "commit
           {/* Screening Questions */}
           {job.screeningQuestions && job.screeningQuestions.length > 0 && (
             <div>
-              <span id="screening-questions" className="label">Screening Questions <span className="text-red-400">*</span></span>
-              <p className="text-xs text-amber-600 mb-3">Please answer all questions to submit your application.</p>
-              <div className="space-y-4" role="group" aria-labelledby="screening-questions">
+              <span id="screening-questions" className="label">
+                Screening Questions <span className="text-red-400">*</span>
+              </span>
+              <p className="text-xs text-amber-600 mb-3">
+                Please answer all questions to submit your application.
+              </p>
+              <div
+                className="space-y-4"
+                role="group"
+                aria-labelledby="screening-questions"
+              >
                 {job.screeningQuestions.map((question, index) => (
                   <div key={index}>
                     <label className="text-sm text-amber-200 mb-1.5 block">
@@ -433,7 +514,12 @@ export default function ApplicationForm({ job, publicKey, biddingPhase = "commit
                     <textarea
                       value={screeningAnswers[question] || ""}
                       disabled={isPending}
-                      onChange={(e) => setScreeningAnswers({ ...screeningAnswers, [question]: e.target.value })}
+                      onChange={(e) =>
+                        setScreeningAnswers({
+                          ...screeningAnswers,
+                          [question]: e.target.value,
+                        })
+                      }
                       rows={3}
                       placeholder="Your answer..."
                       className="textarea-field"
@@ -442,13 +528,17 @@ export default function ApplicationForm({ job, publicKey, biddingPhase = "commit
                 ))}
               </div>
               {!allScreeningQuestionsAnswered && (
-                <p className="mt-2 text-xs text-red-400">All screening questions must be answered</p>
+                <p className="mt-2 text-xs text-red-400">
+                  All screening questions must be answered
+                </p>
               )}
             </div>
           )}
 
           {error && (
-            <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm">{error}</div>
+            <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+              {error}
+            </div>
           )}
 
           <button
@@ -456,17 +546,22 @@ export default function ApplicationForm({ job, publicKey, biddingPhase = "commit
             disabled={!isFormValid || isPending}
             className={clsx(
               "btn-primary w-full flex items-center justify-center gap-2",
-              isPending && "opacity-90 cursor-not-allowed"
+              isPending && "opacity-90 cursor-not-allowed",
             )}
           >
-            {isPending ? "Application submitted!" : (submitButtonText || "Submit Proposal")}
+            {isSubmitting
+              ? "Submitting..."
+              : isSubmitted
+                ? "Application submitted!"
+                : submitButtonText || "Submit Proposal"}
           </button>
         </div>
       </div>
 
       {revealLater && (
         <div className="mt-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-300">
-          Save your reveal nonce securely: <span className="font-mono break-all">{revealNonce}</span>
+          Save your reveal nonce securely:{" "}
+          <span className="font-mono break-all">{revealNonce}</span>
         </div>
       )}
     </>
@@ -484,7 +579,12 @@ interface ProposalScoresProps {
  * Issue #1548 — live Relevance / Clarity / Completeness readout. A scoring
  * failure is shown as a warning and never affects whether the form can submit.
  */
-function ProposalScores({ scoring, score, warning, ready }: ProposalScoresProps) {
+function ProposalScores({
+  scoring,
+  score,
+  warning,
+  ready,
+}: ProposalScoresProps) {
   if (!ready) return null;
 
   return (
@@ -535,7 +635,11 @@ function ProposalScores({ scoring, score, warning, ready }: ProposalScoresProps)
 function ScoreBar({ label, value }: { label: string; value: number }) {
   const clamped = Math.max(0, Math.min(100, Math.round(value)));
   const tone =
-    clamped >= 75 ? "bg-green-400" : clamped >= 50 ? "bg-market-400" : "bg-red-400";
+    clamped >= 75
+      ? "bg-green-400"
+      : clamped >= 50
+        ? "bg-market-400"
+        : "bg-red-400";
 
   return (
     <div>
@@ -551,12 +655,31 @@ function ScoreBar({ label, value }: { label: string; value: number }) {
         aria-valuemin={0}
         aria-valuemax={100}
       >
-        <div className={`h-full rounded-full ${tone}`} style={{ width: `${clamped}%` }} />
+        <div
+          className={`h-full rounded-full ${tone}`}
+          style={{ width: `${clamped}%` }}
+        />
       </div>
     </div>
   );
 }
 
 function Spinner() {
-  return <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>;
+  return (
+    <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
+      <circle
+        className="opacity-25"
+        cx="12"
+        cy="12"
+        r="10"
+        stroke="currentColor"
+        strokeWidth="4"
+      />
+      <path
+        className="opacity-75"
+        fill="currentColor"
+        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+      />
+    </svg>
+  );
 }
