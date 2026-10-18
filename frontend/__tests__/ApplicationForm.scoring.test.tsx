@@ -135,7 +135,7 @@ describe("ApplicationForm proposal scoring (#1548)", () => {
     expect(api.scoreProposal).not.toHaveBeenCalled();
   });
 
-  it("shows the submitted state while the application request is pending", async () => {
+  it("shows the submitting state while the application request is pending", async () => {
     (api.submitApplication as jest.Mock).mockReturnValue(new Promise(() => {}));
 
     render(
@@ -146,7 +146,7 @@ describe("ApplicationForm proposal scoring (#1548)", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Submit Proposal" }));
 
-    expect(await screen.findByRole("button", { name: "Application submitted!" })).toBeDisabled();
+    expect(await screen.findByRole("button", { name: "Submitting..." })).toBeDisabled();
   });
 
   it("reverts the submitted state and shows an error when submission fails", async () => {

@@ -54,7 +54,7 @@ describe("ApplicationForm optimistic updates", () => {
     (api.fetchProposalTemplates as jest.Mock).mockResolvedValue([]);
   });
 
-  it("Immediately after click: button text changes to 'Application submitted!' (optimistic) and button is disabled", async () => {
+  it("Immediately after click: button shows submitting state and is disabled", async () => {
     let resolveSubmit: (val: any) => void = () => {};
     const submitPromise = new Promise((resolve) => {
       resolveSubmit = resolve;
@@ -76,8 +76,8 @@ describe("ApplicationForm optimistic updates", () => {
     // Click submit
     fireEvent.click(button);
 
-    // Immediately after click: text changes to "Application submitted!" and is disabled
-    expect(button).toHaveTextContent("Application submitted!");
+    // The in-flight request is distinct from a completed submission.
+    expect(button).toHaveTextContent("Submitting...");
     expect(button).toBeDisabled();
 
     // Cleanup promise
@@ -107,7 +107,7 @@ describe("ApplicationForm optimistic updates", () => {
     fireEvent.click(button);
 
     // Optimistically updated
-    expect(button).toHaveTextContent("Application submitted!");
+    expect(button).toHaveTextContent("Submitting...");
     expect(button).toBeDisabled();
 
     // Simulate API failure
@@ -117,7 +117,7 @@ describe("ApplicationForm optimistic updates", () => {
 
     // Button state should be reverted: re-enabled and text restored
     await waitFor(() => {
-      expect(button).not.toHaveTextContent("Application submitted!");
+      expect(button).not.toHaveTextContent("Submitting...");
       expect(button).toHaveTextContent("Submit Proposal");
       expect(button).toBeEnabled();
     });
@@ -146,7 +146,7 @@ describe("ApplicationForm optimistic updates", () => {
     const button = screen.getByRole("button", { name: /Submit Proposal|Apply/i });
     fireEvent.click(button);
 
-    expect(button).toHaveTextContent("Application submitted!");
+    expect(button).toHaveTextContent("Submitting...");
     expect(button).toBeDisabled();
 
     // Simulate API success
@@ -154,7 +154,7 @@ describe("ApplicationForm optimistic updates", () => {
       resolveSubmit({ success: true, data: { id: "app-1" } });
     });
 
-    // Keeps optimistic state and remains disabled permanently
+    // A successful request transitions from submitting to submitted.
     expect(button).toHaveTextContent("Application submitted!");
     expect(button).toBeDisabled();
     expect(onSuccess).toHaveBeenCalledTimes(1);
