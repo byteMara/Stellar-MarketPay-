@@ -108,7 +108,7 @@ self.addEventListener("message", (event) => {
     // Client enqueues a failed mutation for later replay
     case "ENQUEUE_REQUEST": {
       const { url, method, body, headers } = event.data.payload;
-      enqueueRequest({ url, method, body, headers });
+      event.waitUntil(enqueueRequest({ url, method, body, headers }));
       break;
     }
 
@@ -248,16 +248,31 @@ async function networkFirstPage(request) {
 async function enqueueRequest(entry) {
   const db = await openSyncDb();
   const tx = db.transaction(SYNC_QUEUE_KEY, "readwrite");
-  tx.objectStore(SYNC_QUEUE_KEY).add({ ...entry, timestamp: Date.now() });
-  await tx.complete;
+  const done = transactionDone(tx);
+  const store = tx.objectStore(SYNC_QUEUE_KEY);
+  const entries = await storeGetAll(store);
+  const duplicate = entries.some(
+    (queued) =>
+      queued.url === entry.url &&
+      (queued.method || "POST") === (entry.method || "POST") &&
+      queued.body === entry.body &&
+      JSON.stringify(queued.headers || {}) === JSON.stringify(entry.headers || {})
+  );
+  if (!duplicate) {
+    store.add({ ...entry, timestamp: Date.now() });
+  }
+  await done;
   db.close();
 }
 
 async function replayQueue() {
   const db = await openSyncDb();
-  const tx = db.transaction(SYNC_QUEUE_KEY, "readwrite");
-  const store = tx.objectStore(SYNC_QUEUE_KEY);
-  const entries = await storeGetAll(store);
+  const readTx = db.transaction(SYNC_QUEUE_KEY, "readonly");
+  const readDone = transactionDone(readTx);
+  const entries = await storeGetAll(readTx.objectStore(SYNC_QUEUE_KEY));
+  await readDone;
+  const failures = [];
+  const completed = [];
 
   for (const entry of entries) {
     try {
@@ -267,21 +282,51 @@ async function replayQueue() {
         body: entry.body,
       });
       if (response.ok) {
-        store.delete(entry.id);
+        completed.push(entry.id);
+      } else if (response.status >= 400 && response.status < 500) {
+        completed.push(entry.id);
+        failures.push({ url: entry.url, status: response.status });
       }
     } catch {
       // Leave in queue for next sync attempt
     }
   }
 
-  await tx.complete;
+  if (completed.length > 0) {
+    const writeTx = db.transaction(SYNC_QUEUE_KEY, "readwrite");
+    const writeDone = transactionDone(writeTx);
+    const store = writeTx.objectStore(SYNC_QUEUE_KEY);
+    completed.forEach((id) => store.delete(id));
+    await writeDone;
+  }
   db.close();
 
   // Notify all open clients that sync completed
   const clients = await self.clients.matchAll({ type: "window" });
+  failures.forEach((failure) =>
+    clients.forEach((client) =>
+      client.postMessage({ type: "SYNC_FAILURE", ...failure })
+    )
+  );
   clients.forEach((client) =>
     client.postMessage({ type: "SYNC_COMPLETE" })
   );
+}
+
+function transactionDone(tx) {
+  return new Promise((resolve, reject) => {
+    tx.addEventListener("complete", resolve, { once: true });
+    tx.addEventListener(
+      "error",
+      () => reject(tx.error || new Error("IndexedDB transaction failed")),
+      { once: true }
+    );
+    tx.addEventListener(
+      "abort",
+      () => reject(tx.error || new Error("IndexedDB transaction aborted")),
+      { once: true }
+    );
+  });
 }
 
 /** Minimal IndexedDB wrapper (no idb library dependency). */

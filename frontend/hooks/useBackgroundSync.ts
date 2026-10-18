@@ -11,7 +11,7 @@
  * Also listens for the SW's SYNC_COMPLETE message and calls an optional
  * `onSyncComplete` callback so the UI can refresh stale data.
  */
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useRef } from "react";
 
 interface QueuedRequest {
   url: string;
@@ -27,6 +27,7 @@ interface UseBackgroundSyncOptions {
 
 export function useBackgroundSync(options: UseBackgroundSyncOptions = {}) {
   const { onSyncComplete } = options;
+  const queuedRequests = useRef(new Map<string, Promise<Response | null>>());
 
   // Listen for SYNC_COMPLETE messages from the service worker
   useEffect(() => {
@@ -36,7 +37,10 @@ export function useBackgroundSync(options: UseBackgroundSyncOptions = {}) {
 
     const handleMessage = (event: MessageEvent) => {
       if (event.data?.type === "SYNC_COMPLETE") {
+        queuedRequests.current.clear();
         onSyncComplete?.();
+      } else if (event.data?.type === "SYNC_FAILURE") {
+        queuedRequests.current.clear();
       }
     };
 
@@ -54,17 +58,49 @@ export function useBackgroundSync(options: UseBackgroundSyncOptions = {}) {
    */
   const queueRequest = useCallback(
     async (request: QueuedRequest): Promise<Response | null> => {
+      const normalized = {
+        ...request,
+        method: request.method ?? "POST",
+        headers: request.headers ?? { "Content-Type": "application/json" },
+      };
+      const signature = JSON.stringify({
+        ...normalized,
+        headers: Object.fromEntries(
+          Object.entries(normalized.headers).sort(([left], [right]) =>
+            left.localeCompare(right)
+          )
+        ),
+      });
+      const existing = queuedRequests.current.get(signature);
+      if (existing) return existing;
+
+      const pending = (async () => {
+        if (typeof navigator !== "undefined" && !navigator.onLine) {
+          await enqueueInServiceWorker(request);
+          return null;
+        }
+
+        try {
+          return await fetch(request.url, {
+            method: normalized.method,
+            headers: normalized.headers,
+            body: request.body,
+          });
+        } catch {
+          // Network failure — hand off to the service worker
+          await enqueueInServiceWorker(request);
+          return null;
+        }
+      })();
+
+      queuedRequests.current.set(signature, pending);
       try {
-        const response = await fetch(request.url, {
-          method: request.method ?? "POST",
-          headers: request.headers ?? { "Content-Type": "application/json" },
-          body: request.body,
-        });
+        const response = await pending;
+        if (response !== null) queuedRequests.current.delete(signature);
         return response;
-      } catch {
-        // Network failure — hand off to the service worker
-        await enqueueInServiceWorker(request);
-        return null;
+      } catch (error) {
+        queuedRequests.current.delete(signature);
+        throw error;
       }
     },
     []

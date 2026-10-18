@@ -24,6 +24,7 @@ export default function OfflineBanner() {
   const [showReconnected, setShowReconnected] = useState(false);
   const [cachedCount, setCachedCount] = useState(0);
   const [showReconnecting, setShowReconnecting] = useState(false);
+  const [syncFailure, setSyncFailure] = useState<number | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -45,16 +46,44 @@ export default function OfflineBanner() {
       // Refresh count when going offline so the banner is accurate
       setCachedCount(getCachedJobCount());
     };
+    const handleServiceWorkerMessage = (event: MessageEvent) => {
+      if (event.data?.type === "SYNC_FAILURE") {
+        setSyncFailure(
+          typeof event.data.status === "number" ? event.data.status : null
+        );
+      }
+    };
 
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
+    navigator.serviceWorker?.addEventListener(
+      "message",
+      handleServiceWorkerMessage
+    );
 
     return () => {
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
+      navigator.serviceWorker?.removeEventListener(
+        "message",
+        handleServiceWorkerMessage
+      );
       if (timerRef.current) clearTimeout(timerRef.current);
     };
   }, []);
+
+  if (syncFailure !== null) {
+    return (
+      <div
+        role="alert"
+        aria-live="assertive"
+        className="fixed top-0 left-0 right-0 z-50 border-b border-red-500/30 bg-red-500/10 px-4 py-3 text-sm font-medium text-red-300"
+      >
+        An offline change could not be synced
+        {syncFailure ? ` (HTTP ${syncFailure})` : ""}. Please review and try again.
+      </div>
+    );
+  }
 
   if (isOnline && !showReconnecting) return null;
 
